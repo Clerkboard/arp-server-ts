@@ -6,7 +6,8 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "build": "tsc",
-    "test": "tsx test/send-message.ts"
+    "test": "tsx test/send-message.ts",
+    "test:jcs": "tsx test/jcs-vectors.ts"
   },
   "dependencies": {
     "express": "^4.21.0",

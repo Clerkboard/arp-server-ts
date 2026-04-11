@@ -58,6 +58,96 @@ const pinStore = new PinStore(DATA_DIR);
 const idempotencyStore = new IdempotencyStore();
 
 // ---------------------------------------------------------------------------
+// contentRef validation (ACP v0.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Private-IP hostname check for SSRF prevention.
+ * Rejects localhost, loopback, and RFC-1918 addresses.
+ */
+function isPrivateHost(hostname: string): boolean {
+  if (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '0.0.0.0' ||
+    hostname === '::1'
+  ) {
+    return true;
+  }
+  if (hostname.startsWith('10.')) return true;
+  if (hostname.startsWith('192.168.')) return true;
+  // 172.16.0.0 – 172.31.255.255
+  if (hostname.startsWith('172.')) {
+    const second = parseInt(hostname.split('.')[1], 10);
+    if (second >= 16 && second <= 31) return true;
+  }
+  return false;
+}
+
+const HEX64_RE = /^[0-9a-fA-F]{64}$/;
+
+/**
+ * Recursively walk `body` and validate every `contentRef` object.
+ * Returns an error message string if invalid, or null if everything is fine.
+ */
+export function validateContentRefs(body: unknown): string | null {
+  if (body === null || body === undefined || typeof body !== 'object') {
+    return null;
+  }
+
+  if (Array.isArray(body)) {
+    for (const item of body) {
+      const err = validateContentRefs(item);
+      if (err) return err;
+    }
+    return null;
+  }
+
+  const obj = body as Record<string, unknown>;
+
+  if ('contentRef' in obj && obj.contentRef !== null && typeof obj.contentRef === 'object') {
+    const ref = obj.contentRef as Record<string, unknown>;
+
+    // url — required, must be https, must not target private IPs
+    if (typeof ref.url !== 'string' || ref.url === '') {
+      return 'contentRef.url is required and must be a string';
+    }
+    if (!ref.url.startsWith('https://')) {
+      return 'contentRef.url must start with https://';
+    }
+    let hostname: string;
+    try {
+      hostname = new URL(ref.url).hostname;
+    } catch {
+      return `contentRef.url is not a valid URL: ${ref.url}`;
+    }
+    if (isPrivateHost(hostname)) {
+      return `contentRef.url must not reference a private/loopback address: ${hostname}`;
+    }
+
+    // sha256 — required, 64 hex chars
+    if (typeof ref.sha256 !== 'string' || !HEX64_RE.test(ref.sha256)) {
+      return 'contentRef.sha256 is required and must be a 64-character hex string';
+    }
+
+    // size — required, positive integer
+    if (typeof ref.size !== 'number' || !Number.isInteger(ref.size) || ref.size <= 0) {
+      return 'contentRef.size is required and must be a positive integer';
+    }
+
+    // mediaType — optional, no validation needed
+  }
+
+  // Recurse into all values
+  for (const value of Object.values(obj)) {
+    const err = validateContentRefs(value);
+    if (err) return err;
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -318,6 +408,15 @@ app.post(`/${AGENT_NAME}/inbox`, async (req: Request, res: Response) => {
       // First contact -- pin the key
       pinStore.setPin(msg.from, senderKeyMultibase);
       log.info('Pinned new sender key', { did: msg.from });
+    }
+
+    // 7b. Validate contentRef objects in body (ACP v0.3)
+    const contentRefError = validateContentRefs(msg.body);
+    if (contentRefError) {
+      res.status(400).json(
+        errorResponse(msg.from, msg.id, 'SCHEMA_INVALID', contentRefError, false),
+      );
+      return;
     }
 
     // 8. Process message type
