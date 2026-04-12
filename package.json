@@ -2,6 +2,7 @@
   "name": "acp-server-ts",
   "version": "0.1.0",
   "description": "ACP reference server — TypeScript",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "start": "tsx src/index.ts",
