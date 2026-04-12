@@ -1,12 +1,12 @@
 services:
-  acp-server:
+  arp-server:
     build: .
     ports:
       - "3141:3141"
     env_file:
       - .env
     volumes:
-      - acp-data:/app/data
+      - arp-data:/app/data
 
 volumes:
-  acp-data:
+  arp-data:

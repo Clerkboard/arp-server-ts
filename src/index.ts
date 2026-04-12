@@ -1,12 +1,12 @@
 /**
- * ACP Reference Server -- TypeScript / Express
+ * ARP Reference Server -- TypeScript / Express
  *
  * Implements a single "echo" agent that speaks the Agent Communication
  * Protocol.  Routes:
  *
  *   GET  /{name}/did.json              -- DID document
- *   GET  /.well-known/acp/{name}.json  -- Agent Card
- *   GET  /.well-known/acp/index.json   -- Agent index
+ *   GET  /.well-known/arp/{name}.json  -- Agent Card
+ *   GET  /.well-known/arp/index.json   -- Agent index
  *   POST /{name}/inbox                 -- Message inbox
  */
 
@@ -24,8 +24,8 @@ import {
 import { PinStore, IdempotencyStore } from './store.js';
 import { log } from './logger.js';
 import type {
-  ACPMessage,
-  ACPErrorCode,
+  ARPMessage,
+  ARPErrorCode,
   DIDDocument,
   AgentCard,
   AgentIndex,
@@ -35,10 +35,10 @@ import type {
 // Configuration
 // ---------------------------------------------------------------------------
 
-const AGENT_NAME = process.env.ACP_AGENT_NAME ?? 'echo';
-const DOMAIN = process.env.ACP_DOMAIN ?? 'localhost';
-const PORT = Number(process.env.ACP_PORT ?? 3141);
-const DATA_DIR = process.env.ACP_DATA_DIR ?? './data';
+const AGENT_NAME = process.env.ARP_AGENT_NAME ?? 'echo';
+const DOMAIN = process.env.ARP_DOMAIN ?? 'localhost';
+const PORT = Number(process.env.ARP_PORT ?? 3141);
+const DATA_DIR = process.env.ARP_DATA_DIR ?? './data';
 
 const SCHEME = DOMAIN === 'localhost' ? 'http' : 'https';
 const BASE_URL = DOMAIN === 'localhost'
@@ -58,7 +58,7 @@ const pinStore = new PinStore(DATA_DIR);
 const idempotencyStore = new IdempotencyStore();
 
 // ---------------------------------------------------------------------------
-// contentRef validation (ACP v0.3)
+// contentRef validation (ARP v0.3)
 // ---------------------------------------------------------------------------
 
 /**
@@ -176,16 +176,16 @@ function nowISO(): string {
   return new Date().toISOString();
 }
 
-/** Build and sign an ACP error response. */
+/** Build and sign an ARP error response. */
 function errorResponse(
   to: string,
   correlationId: string | undefined,
-  code: ACPErrorCode,
+  code: ARPErrorCode,
   message: string,
   retryable: boolean,
-): ACPMessage {
-  const msg: ACPMessage = {
-    acp: '1.0',
+): ARPMessage {
+  const msg: ARPMessage = {
+    arp: '1.0',
     id: newMessageId(),
     type: 'error',
     from: AGENT_DID,
@@ -197,15 +197,15 @@ function errorResponse(
   return signMessage(msg, privateKey);
 }
 
-/** Build and sign a generic ACP response. */
+/** Build and sign a generic ARP response. */
 function buildResponse(
   to: string,
   correlationId: string | undefined,
-  type: ACPMessage['type'],
+  type: ARPMessage['type'],
   body: Record<string, unknown>,
-): ACPMessage {
-  const msg: ACPMessage = {
-    acp: '1.0',
+): ARPMessage {
+  const msg: ARPMessage = {
+    arp: '1.0',
     id: newMessageId(),
     type,
     from: AGENT_DID,
@@ -225,7 +225,7 @@ const app = express();
 
 // Parse JSON with a 1 MB limit.  This enforces MESSAGE_TOO_LARGE at the
 // body-parser level (Express will return 413 automatically).
-app.use(express.json({ limit: '1mb', type: ['application/acp+json', 'application/json'] }));
+app.use(express.json({ limit: '1mb', type: ['application/arp+json', 'application/json'] }));
 
 // ---- DID Document --------------------------------------------------------
 
@@ -245,8 +245,8 @@ app.get(`/${AGENT_NAME}/did.json`, (_req: Request, res: Response) => {
     assertionMethod: ['#key-1'],
     service: [
       {
-        id: '#acp',
-        type: 'AgentCommunicationProtocol',
+        id: '#arp',
+        type: 'AgentRelationsProtocol',
         serviceEndpoint: `${BASE_URL}/${AGENT_NAME}/inbox`,
       },
     ],
@@ -256,15 +256,15 @@ app.get(`/${AGENT_NAME}/did.json`, (_req: Request, res: Response) => {
 
 // ---- Agent Card ----------------------------------------------------------
 
-app.get(`/.well-known/acp/${AGENT_NAME}.json`, (_req: Request, res: Response) => {
+app.get(`/.well-known/arp/${AGENT_NAME}.json`, (_req: Request, res: Response) => {
   const card: AgentCard = {
-    acp: '1.0',
+    arp: '1.0',
     name: AGENT_NAME,
     did: AGENT_DID,
     inbox: `${BASE_URL}/${AGENT_NAME}/inbox`,
     publicKey: publicKeyMultibase,
     description:
-      'Echo agent -- returns whatever you send it. For testing ACP message flow.',
+      'Echo agent -- returns whatever you send it. For testing ARP message flow.',
     capabilities: [
       {
         name: 'echo',
@@ -291,20 +291,20 @@ app.get(`/.well-known/acp/${AGENT_NAME}.json`, (_req: Request, res: Response) =>
 
 app.get('/agents.txt', (_req: Request, res: Response) => {
   res.type('text/plain').send(
-    `# ACP agents for this domain\nacp-version: 1.0\nacp-index: ${BASE_URL}/.well-known/acp/index.json\nacp-docs: https://github.com/clerkboard/acp/blob/main/spec/acp-rfc.md#appendix-e-implementers-quick-reference\n`,
+    `# ARP agents for this domain\narp-version: 1.0\narp-index: ${BASE_URL}/.well-known/arp/index.json\narp-docs: https://github.com/clerkboard/arp/blob/main/spec/arp-rfc.md#appendix-e-implementers-quick-reference\n`,
   );
 });
 
 // ---- Agent Index ---------------------------------------------------------
 
-app.get('/.well-known/acp/index.json', (_req: Request, res: Response) => {
+app.get('/.well-known/arp/index.json', (_req: Request, res: Response) => {
   const index: AgentIndex = {
     domain: DOMAIN,
-    protocol: 'acp/1.0',
+    protocol: 'arp/1.0',
     agents: [
       {
         name: AGENT_NAME,
-        url: `/.well-known/acp/${AGENT_NAME}.json`,
+        url: `/.well-known/arp/${AGENT_NAME}.json`,
         summary: 'Echo agent for testing',
         tags: ['echo', 'testing'],
       },
@@ -320,18 +320,18 @@ app.post(`/${AGENT_NAME}/inbox`, async (req: Request, res: Response) => {
   try {
     // 1. Content-Type check
     const ct = req.headers['content-type'] ?? '';
-    if (!ct.includes('application/acp+json') && !ct.includes('application/json')) {
+    if (!ct.includes('application/arp+json') && !ct.includes('application/json')) {
       res.status(415).json(
         errorResponse('unknown', undefined, 'SCHEMA_INVALID',
-          'Content-Type must be application/acp+json or application/json', false),
+          'Content-Type must be application/arp+json or application/json', false),
       );
       return;
     }
 
-    const msg = req.body as ACPMessage;
+    const msg = req.body as ARPMessage;
 
     // 2. Required envelope fields
-    const required: (keyof ACPMessage)[] = ['acp', 'id', 'type', 'from', 'to', 'createdAt', 'body', 'signature'];
+    const required: (keyof ARPMessage)[] = ['arp', 'id', 'type', 'from', 'to', 'createdAt', 'body', 'signature'];
     for (const field of required) {
       if (msg[field] === undefined || msg[field] === null) {
         res.status(400).json(
@@ -441,7 +441,7 @@ app.post(`/${AGENT_NAME}/inbox`, async (req: Request, res: Response) => {
     // 7b. Record message ID now that signature is verified
     idempotencyStore.addMessage(msg.id);
 
-    // 7c. Validate contentRef objects in body (ACP v0.3)
+    // 7c. Validate contentRef objects in body (ARP v0.3)
     const contentRefError = validateContentRefs(msg.body);
     if (contentRefError) {
       res.status(400).json(
@@ -453,7 +453,7 @@ app.post(`/${AGENT_NAME}/inbox`, async (req: Request, res: Response) => {
     // 8. Process message type
     log.info('Processing message', { id: msg.id, type: msg.type, from: msg.from });
 
-    let response: ACPMessage;
+    let response: ARPMessage;
 
     switch (msg.type) {
       case 'negotiate': {
@@ -527,7 +527,7 @@ app.use((err: Error & { status?: number; type?: string }, _req: Request, res: Re
 // ---------------------------------------------------------------------------
 
 app.listen(PORT, () => {
-  log.info('ACP server started', {
+  log.info('ARP server started', {
     agent: AGENT_NAME,
     did: AGENT_DID,
     inbox: `${BASE_URL}/${AGENT_NAME}/inbox`,
@@ -538,7 +538,7 @@ app.listen(PORT, () => {
   const banner = [
     '',
     '  ┌──────────────────────────────────────────────┐',
-    '  │  ACP Reference Server                        │',
+    '  │  ARP Reference Server                        │',
     '  ├──────────────────────────────────────────────┤',
     `  │  Agent : ${AGENT_NAME.padEnd(37)}│`,
     `  │  DID   : ${AGENT_DID.padEnd(37)}│`,

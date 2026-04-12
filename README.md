@@ -1,8 +1,8 @@
-# ACP Server -- TypeScript
+# ARP Server -- TypeScript
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/template?referralCode=clerkboard&code=acp-server-ts)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/template?referralCode=clerkboard&code=arp-server-ts)
 
-Reference implementation of the [Agent Communication Protocol v0.3](https://github.com/clerkboard/acp).
+Reference implementation of the [Agent Relations Protocol v0.3](https://github.com/clerkboard/arp).
 
 ## Run
 
@@ -24,9 +24,9 @@ npm run test:jcs      # JCS canonicalisation vectors
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ACP_AGENT_NAME` | `echo` | Agent name |
-| `ACP_DOMAIN` | `localhost` | Domain. **Set to your actual domain in production** (e.g. `agents.yourdomain.com`) |
-| `ACP_PORT` | `3141` | Listen port |
-| `ACP_DATA_DIR` | `./data` | Persistent storage for keys and pins |
+| `ARP_AGENT_NAME` | `echo` | Agent name |
+| `ARP_DOMAIN` | `localhost` | Domain. **Set to your actual domain in production** (e.g. `agents.yourdomain.com`) |
+| `ARP_PORT` | `3141` | Listen port |
+| `ARP_DATA_DIR` | `./data` | Persistent storage for keys and pins |
 
 Copy `.env.example` to `.env` for local config.

@@ -1,8 +1,8 @@
 /**
- * Ed25519 key management, signing, and verification for ACP.
+ * Ed25519 key management, signing, and verification for ARP.
  *
  * Keys are persisted to disk so the agent keeps a stable identity across
- * restarts.  Signing and verification follow the ACP spec: JCS-canonicalise
+ * restarts.  Signing and verification follow the ARP spec: JCS-canonicalise
  * the message (without `signature`), sign / verify the UTF-8 bytes with
  * Ed25519, and encode the signature as multibase (z + base58btc).
  */
@@ -14,7 +14,7 @@ import bs58 from 'bs58';
 // canonicalize ships as CJS; import and cast for ESM interop.
 import _canonicalize from 'canonicalize';
 const canonicalize = _canonicalize as unknown as (obj: unknown) => string | undefined;
-import type { ACPMessage, StoredKeys } from './types.js';
+import type { ARPMessage, StoredKeys } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -139,7 +139,7 @@ export function loadOrCreateKeys(
 /**
  * Canonicalise the message (excluding `signature`) per RFC 8785 (JCS).
  */
-function canonicalPayload(message: Omit<ACPMessage, 'signature'> & { signature?: string }): Buffer {
+function canonicalPayload(message: Omit<ARPMessage, 'signature'> & { signature?: string }): Buffer {
   // Shallow-copy, strip signature
   const { signature: _sig, ...rest } = message;
   const canonical = canonicalize(rest);
@@ -150,13 +150,13 @@ function canonicalPayload(message: Omit<ACPMessage, 'signature'> & { signature?:
 }
 
 /**
- * Sign an ACP message.  Mutates the object by adding a `signature` field
+ * Sign an ARP message.  Mutates the object by adding a `signature` field
  * and returns the same object for convenience.
  */
 export function signMessage(
-  message: ACPMessage,
+  message: ARPMessage,
   privateKey: crypto.KeyObject,
-): ACPMessage {
+): ARPMessage {
   const payload = canonicalPayload(message);
   const sig = crypto.sign(null, payload, privateKey);
   message.signature = encodeMultibaseRaw(sig);
@@ -164,10 +164,10 @@ export function signMessage(
 }
 
 /**
- * Verify the signature on an ACP message.  Returns `true` when valid.
+ * Verify the signature on an ARP message.  Returns `true` when valid.
  */
 export function verifyMessage(
-  message: ACPMessage,
+  message: ARPMessage,
   publicKey: crypto.KeyObject,
 ): boolean {
   if (!message.signature) return false;

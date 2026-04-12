@@ -1,5 +1,5 @@
 /**
- * Persistence layer for ACP:
+ * Persistence layer for ARP:
  *
  * - **Key Pin Store** (TOFU) -- maps a DID to its pinned public key.
  *   Backed by `data/pins.json`.

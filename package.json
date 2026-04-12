@@ -1,7 +1,7 @@
 {
-  "name": "acp-server-ts",
+  "name": "arp-server-ts",
   "version": "0.1.0",
-  "description": "ACP reference server — TypeScript",
+  "description": "ARP reference server — TypeScript",
   "license": "MIT",
   "type": "module",
   "scripts": {

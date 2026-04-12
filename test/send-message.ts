@@ -1,5 +1,5 @@
 /**
- * ACP end-to-end test script.
+ * ARP end-to-end test script.
  *
  * 1. Generate a temporary Ed25519 key pair for a test sender.
  * 2. Send a first-contact negotiate message (signed).
@@ -19,9 +19,9 @@ const canonicalize = _canonicalize as unknown as (obj: unknown) => string | unde
 // Config
 // ---------------------------------------------------------------------------
 
-const PORT = Number(process.env.ACP_PORT ?? 3141);
-const DOMAIN = process.env.ACP_DOMAIN ?? 'localhost';
-const AGENT_NAME = process.env.ACP_AGENT_NAME ?? 'echo';
+const PORT = Number(process.env.ARP_PORT ?? 3141);
+const DOMAIN = process.env.ARP_DOMAIN ?? 'localhost';
+const AGENT_NAME = process.env.ARP_AGENT_NAME ?? 'echo';
 const BASE_URL = `http://${DOMAIN}:${PORT}`;
 const INBOX_URL = `${BASE_URL}/${AGENT_NAME}/inbox`;
 const SENDER_DID = `did:web:${DOMAIN}:test-sender`;
@@ -55,8 +55,8 @@ function importPublicKey(mb: string): crypto.KeyObject {
   });
 }
 
-interface ACPMessage {
-  acp: string;
+interface ARPMessage {
+  arp: string;
   id: string;
   type: string;
   from: string;
@@ -69,7 +69,7 @@ interface ACPMessage {
   signature?: string;
 }
 
-function signMessage(msg: ACPMessage, priv: crypto.KeyObject): ACPMessage {
+function signMessage(msg: ARPMessage, priv: crypto.KeyObject): ARPMessage {
   const { signature: _s, ...rest } = msg;
   const payload = Buffer.from(canonicalize(rest)!, 'utf-8');
   const sig = crypto.sign(null, payload, priv);
@@ -77,7 +77,7 @@ function signMessage(msg: ACPMessage, priv: crypto.KeyObject): ACPMessage {
   return msg;
 }
 
-function verifyMessage(msg: ACPMessage, pub: crypto.KeyObject): boolean {
+function verifyMessage(msg: ARPMessage, pub: crypto.KeyObject): boolean {
   if (!msg.signature) return false;
   const sigBytes = decodeMultibase(msg.signature);
   const { signature: _s, ...rest } = msg;
@@ -102,13 +102,13 @@ function assert(label: string, condition: boolean, detail?: string): void {
   }
 }
 
-async function sendACP(msg: ACPMessage): Promise<{ status: number; body: ACPMessage }> {
+async function sendARP(msg: ARPMessage): Promise<{ status: number; body: ARPMessage }> {
   const res = await fetch(INBOX_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/acp+json' },
+    headers: { 'Content-Type': 'application/arp+json' },
     body: JSON.stringify(msg),
   });
-  const body = (await res.json()) as ACPMessage;
+  const body = (await res.json()) as ARPMessage;
   return { status: res.status, body };
 }
 
@@ -117,7 +117,7 @@ async function sendACP(msg: ACPMessage): Promise<{ status: number; body: ACPMess
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  process.stdout.write('\n  ACP Test Suite\n  ──────────────\n\n');
+  process.stdout.write('\n  ARP Test Suite\n  ──────────────\n\n');
 
   // Generate ephemeral test key pair
   const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
@@ -125,7 +125,7 @@ async function main(): Promise<void> {
 
   // Fetch the server's agent card to get its public key
   process.stdout.write('  Fetching agent card...\n');
-  const cardRes = await fetch(`${BASE_URL}/.well-known/acp/${AGENT_NAME}.json`);
+  const cardRes = await fetch(`${BASE_URL}/.well-known/arp/${AGENT_NAME}.json`);
   const card = (await cardRes.json()) as { publicKey: string };
   const serverPub = importPublicKey(card.publicKey);
   assert('Agent card reachable', cardRes.status === 200);
@@ -137,14 +137,14 @@ async function main(): Promise<void> {
   assert('DID document has correct id', (didDoc as { id: string }).id === RECEIVER_DID);
 
   // Fetch agent index
-  const indexRes = await fetch(`${BASE_URL}/.well-known/acp/index.json`);
+  const indexRes = await fetch(`${BASE_URL}/.well-known/arp/index.json`);
   assert('Agent index reachable', indexRes.status === 200);
 
   // ---- Test: request before negotiate should be rejected ----
   process.stdout.write('\n  -- Pre-negotiate request (should fail) --\n');
   {
-    const msg: ACPMessage = {
-      acp: '1.0',
+    const msg: ARPMessage = {
+      arp: '1.0',
       id: `msg_${crypto.randomUUID()}`,
       type: 'request',
       from: `did:web:${DOMAIN}:unknown-sender`,
@@ -154,7 +154,7 @@ async function main(): Promise<void> {
       body: { text: 'should fail' },
     };
     signMessage(msg, privateKey);
-    const { status, body } = await sendACP(msg);
+    const { status, body } = await sendARP(msg);
     assert('Pre-negotiate request rejected', status === 403);
     assert('Error code is FIRST_CONTACT_REQUIRED',
       (body.body as { code: string }).code === 'FIRST_CONTACT_REQUIRED');
@@ -162,10 +162,10 @@ async function main(): Promise<void> {
 
   // ---- Step 1: First-contact negotiate ----
   process.stdout.write('\n  -- First-contact negotiate --\n');
-  let negotiateResp: ACPMessage;
+  let negotiateResp: ARPMessage;
   {
-    const msg: ACPMessage = {
-      acp: '1.0',
+    const msg: ARPMessage = {
+      arp: '1.0',
       id: `msg_${crypto.randomUUID()}`,
       type: 'negotiate',
       from: SENDER_DID,
@@ -177,7 +177,7 @@ async function main(): Promise<void> {
       },
     };
     signMessage(msg, privateKey);
-    const { status, body } = await sendACP(msg);
+    const { status, body } = await sendARP(msg);
     negotiateResp = body;
 
     assert('Negotiate returns 200', status === 200);
@@ -190,9 +190,9 @@ async function main(): Promise<void> {
   // ---- Step 2: Echo request ----
   process.stdout.write('\n  -- Echo request --\n');
   {
-    const payload = { text: 'Hello, ACP!', number: 42, nested: { key: 'value' } };
-    const msg: ACPMessage = {
-      acp: '1.0',
+    const payload = { text: 'Hello, ARP!', number: 42, nested: { key: 'value' } };
+    const msg: ARPMessage = {
+      arp: '1.0',
       id: `msg_${crypto.randomUUID()}`,
       type: 'request',
       from: SENDER_DID,
@@ -202,7 +202,7 @@ async function main(): Promise<void> {
       body: payload,
     };
     signMessage(msg, privateKey);
-    const { status, body } = await sendACP(msg);
+    const { status, body } = await sendARP(msg);
 
     assert('Echo returns 200', status === 200);
     assert('Response type is response', body.type === 'response');
@@ -215,8 +215,8 @@ async function main(): Promise<void> {
   // ---- Step 3: Unknown capability ----
   process.stdout.write('\n  -- Unknown capability --\n');
   {
-    const msg: ACPMessage = {
-      acp: '1.0',
+    const msg: ARPMessage = {
+      arp: '1.0',
       id: `msg_${crypto.randomUUID()}`,
       type: 'request',
       from: SENDER_DID,
@@ -226,7 +226,7 @@ async function main(): Promise<void> {
       body: {},
     };
     signMessage(msg, privateKey);
-    const { status, body } = await sendACP(msg);
+    const { status, body } = await sendARP(msg);
 
     assert('Unknown capability returns 200', status === 200);
     assert('Response type is error', body.type === 'error');
@@ -238,8 +238,8 @@ async function main(): Promise<void> {
   process.stdout.write('\n  -- Duplicate message ID --\n');
   {
     const dupeId = `msg_${crypto.randomUUID()}`;
-    const msg1: ACPMessage = {
-      acp: '1.0',
+    const msg1: ARPMessage = {
+      arp: '1.0',
       id: dupeId,
       type: 'request',
       from: SENDER_DID,
@@ -249,10 +249,10 @@ async function main(): Promise<void> {
       body: { text: 'first' },
     };
     signMessage(msg1, privateKey);
-    await sendACP(msg1);
+    await sendARP(msg1);
 
-    const msg2: ACPMessage = {
-      acp: '1.0',
+    const msg2: ARPMessage = {
+      arp: '1.0',
       id: dupeId,
       type: 'request',
       from: SENDER_DID,
@@ -262,15 +262,15 @@ async function main(): Promise<void> {
       body: { text: 'duplicate' },
     };
     signMessage(msg2, privateKey);
-    const { status } = await sendACP(msg2);
+    const { status } = await sendARP(msg2);
     assert('Duplicate message ID returns 409', status === 409);
   }
 
   // ---- Step 5: Expired message ----
   process.stdout.write('\n  -- Expired message --\n');
   {
-    const msg: ACPMessage = {
-      acp: '1.0',
+    const msg: ARPMessage = {
+      arp: '1.0',
       id: `msg_${crypto.randomUUID()}`,
       type: 'request',
       from: SENDER_DID,
@@ -281,7 +281,7 @@ async function main(): Promise<void> {
       body: { text: 'expired' },
     };
     signMessage(msg, privateKey);
-    const { status, body } = await sendACP(msg);
+    const { status, body } = await sendARP(msg);
     assert('Expired message returns 400', status === 400);
     assert('Error code is MESSAGE_EXPIRED',
       (body.body as { code: string }).code === 'MESSAGE_EXPIRED');
@@ -290,8 +290,8 @@ async function main(): Promise<void> {
   // ---- Step 6: Cancel message ----
   process.stdout.write('\n  -- Cancel message --\n');
   {
-    const msg: ACPMessage = {
-      acp: '1.0',
+    const msg: ARPMessage = {
+      arp: '1.0',
       id: `msg_${crypto.randomUUID()}`,
       type: 'cancel',
       from: SENDER_DID,
@@ -301,7 +301,7 @@ async function main(): Promise<void> {
       body: {},
     };
     signMessage(msg, privateKey);
-    const { status, body } = await sendACP(msg);
+    const { status, body } = await sendARP(msg);
     assert('Cancel returns 200', status === 200);
     assert('Cancel response type is acknowledge', body.type === 'acknowledge');
     assert('Cancel response body.cancelled is true',

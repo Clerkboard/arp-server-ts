@@ -1,5 +1,5 @@
 /**
- * ACP (Agent Communication Protocol) TypeScript type definitions.
+ * ARP (Agent Relations Protocol) TypeScript type definitions.
  */
 
 // ---------------------------------------------------------------------------
@@ -14,8 +14,8 @@ export type MessageType =
   | 'error'
   | 'cancel';
 
-export interface ACPMessage {
-  acp: string;
+export interface ARPMessage {
+  arp: string;
   id: string;
   type: MessageType;
   from: string;
@@ -32,7 +32,7 @@ export interface ACPMessage {
 // Error codes
 // ---------------------------------------------------------------------------
 
-export type ACPErrorCode =
+export type ARPErrorCode =
   | 'AUTH_FAILED'
   | 'AUTH_DENIED'
   | 'FIRST_CONTACT_REQUIRED'
@@ -46,8 +46,8 @@ export type ACPErrorCode =
   | 'KEY_MISMATCH'
   | 'INTERNAL_ERROR';
 
-export interface ACPErrorBody {
-  code: ACPErrorCode;
+export interface ARPErrorBody {
+  code: ARPErrorCode;
   message: string;
   retryable: boolean;
 }
@@ -64,7 +64,7 @@ export interface Capability {
 }
 
 export interface AgentCard {
-  acp: string;
+  arp: string;
   name: string;
   did: string;
   inbox: string;

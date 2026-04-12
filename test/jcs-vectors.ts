@@ -1,5 +1,5 @@
 /**
- * JCS (RFC 8785) canonicalization test vectors -- ACP spec Appendix D.
+ * JCS (RFC 8785) canonicalization test vectors -- ARP spec Appendix D.
  *
  * Run with:  npx tsx test/jcs-vectors.ts
  */
@@ -17,9 +17,9 @@ const vectors: Vector[] = [
   {
     name: 'Vector 1 -- Key ordering',
     input:
-      '{"type":"request","acp":"1.0","to":"did:web:b.com:agent","id":"msg_001","from":"did:web:a.com:agent","createdAt":"2026-04-12T00:00:00Z","body":{"text":"hello"}}',
+      '{"type":"request","arp":"1.0","to":"did:web:b.com:agent","id":"msg_001","from":"did:web:a.com:agent","createdAt":"2026-04-12T00:00:00Z","body":{"text":"hello"}}',
     expected:
-      '{"acp":"1.0","body":{"text":"hello"},"createdAt":"2026-04-12T00:00:00Z","from":"did:web:a.com:agent","id":"msg_001","to":"did:web:b.com:agent","type":"request"}',
+      '{"arp":"1.0","body":{"text":"hello"},"createdAt":"2026-04-12T00:00:00Z","from":"did:web:a.com:agent","id":"msg_001","to":"did:web:b.com:agent","type":"request"}',
   },
   {
     name: 'Vector 2 -- Numerics and nesting',
