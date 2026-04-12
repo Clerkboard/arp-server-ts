@@ -66,21 +66,38 @@ const idempotencyStore = new IdempotencyStore();
  * Rejects localhost, loopback, and RFC-1918 addresses.
  */
 function isPrivateHost(hostname: string): boolean {
-  if (
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    hostname === '0.0.0.0' ||
-    hostname === '::1'
-  ) {
-    return true;
+  // Normalize: URL.hostname strips brackets from IPv6, lowercase
+  const h = hostname.toLowerCase();
+
+  // Loopback and reserved
+  if (['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]'].includes(h)) return true;
+
+  // IPv6-mapped IPv4 — dotted form (::ffff:127.0.0.1)
+  const v4Mapped = h.match(/^(?:\[?)::ffff:(\d+\.\d+\.\d+\.\d+)(?:\]?)$/);
+  if (v4Mapped) return isPrivateHost(v4Mapped[1]);
+
+  // IPv6-mapped IPv4 — hex form (Node.js normalizes to ::ffff:7f00:1)
+  const v4Hex = h.match(/^(?:\[?)::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})(?:\]?)$/);
+  if (v4Hex) {
+    const hi = parseInt(v4Hex[1], 16);
+    const lo = parseInt(v4Hex[2], 16);
+    const ip = `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
+    return isPrivateHost(ip);
   }
-  if (hostname.startsWith('10.')) return true;
-  if (hostname.startsWith('192.168.')) return true;
-  // 172.16.0.0 – 172.31.255.255
-  if (hostname.startsWith('172.')) {
-    const second = parseInt(hostname.split('.')[1], 10);
+
+  // IPv6 link-local (fe80::) and unique-local (fc00::, fd00::)
+  if (h.startsWith('fe80:') || h.startsWith('fc') || h.startsWith('fd')) return true;
+
+  // IPv4 private ranges
+  if (h.startsWith('10.')) return true;
+  if (h.startsWith('192.168.')) return true;
+  if (h.startsWith('172.')) {
+    const second = parseInt(h.split('.')[1], 10);
     if (second >= 16 && second <= 31) return true;
   }
+  // 169.254.x.x link-local
+  if (h.startsWith('169.254.')) return true;
+
   return false;
 }
 
@@ -345,7 +362,9 @@ app.post(`/${AGENT_NAME}/inbox`, async (req: Request, res: Response) => {
       );
       return;
     }
-    idempotencyStore.addMessage(msg.id);
+    // NOTE: Do NOT record the ID here. Record it only AFTER signature
+    // verification succeeds, otherwise an attacker can poison the
+    // idempotency store with forged messages to block legitimate ones.
 
     // 5. Resolve sender's public key
     let senderKeyMultibase: string | undefined;
@@ -410,7 +429,10 @@ app.post(`/${AGENT_NAME}/inbox`, async (req: Request, res: Response) => {
       log.info('Pinned new sender key', { did: msg.from });
     }
 
-    // 7b. Validate contentRef objects in body (ACP v0.3)
+    // 7b. Record message ID now that signature is verified
+    idempotencyStore.addMessage(msg.id);
+
+    // 7c. Validate contentRef objects in body (ACP v0.3)
     const contentRefError = validateContentRefs(msg.body);
     if (contentRefError) {
       res.status(400).json(
