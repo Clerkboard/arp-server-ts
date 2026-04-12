@@ -291,7 +291,7 @@ app.get(`/.well-known/acp/${AGENT_NAME}.json`, (_req: Request, res: Response) =>
 
 app.get('/agents.txt', (_req: Request, res: Response) => {
   res.type('text/plain').send(
-    `# ACP agents for this domain\nacp-index: ${BASE_URL}/.well-known/acp/index.json\n`,
+    `# ACP agents for this domain\nacp-version: 1.0\nacp-index: ${BASE_URL}/.well-known/acp/index.json\nacp-docs: https://github.com/clerkboard/acp/blob/main/spec/acp-rfc.md#appendix-e-implementers-quick-reference\n`,
   );
 });
 

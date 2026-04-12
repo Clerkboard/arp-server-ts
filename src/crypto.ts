@@ -23,6 +23,9 @@ import type { ACPMessage, StoredKeys } from './types.js';
 /** SPKI DER header for Ed25519 public keys (12 bytes). */
 const ED25519_SPKI_HEADER = Buffer.from('302a300506032b6570032100', 'hex');
 
+/** Multicodec prefix for Ed25519 public keys (2 bytes: 0xed 0x01). */
+const ED25519_MULTICODEC_PREFIX = Buffer.from([0xed, 0x01]);
+
 // ---------------------------------------------------------------------------
 // Key management
 // ---------------------------------------------------------------------------
@@ -45,14 +48,23 @@ function wrapRawPublicKey(raw: Buffer): Buffer {
 }
 
 /**
- * Encode a raw public key as multibase (z + base58btc).
+ * Encode a raw 32-byte public key as multibase with multicodec prefix.
+ * Result: z + base58btc( 0xed01 + raw_32_bytes )  →  34 decoded bytes.
  */
 export function encodeMultibase(raw: Buffer): string {
+  const prefixed = Buffer.concat([ED25519_MULTICODEC_PREFIX, raw]);
+  return 'z' + bs58.encode(prefixed);
+}
+
+/**
+ * Encode raw bytes as multibase WITHOUT multicodec prefix (for signatures).
+ */
+export function encodeMultibaseRaw(raw: Buffer): string {
   return 'z' + bs58.encode(raw);
 }
 
 /**
- * Decode a multibase string (z + base58btc) to a raw Buffer.
+ * Decode a multibase string (z + base58btc) to raw bytes.
  */
 export function decodeMultibase(mb: string): Buffer {
   if (!mb.startsWith('z')) {
@@ -62,16 +74,26 @@ export function decodeMultibase(mb: string): Buffer {
 }
 
 /**
- * Import a raw 32-byte Ed25519 public key (or multibase string) into a
- * Node.js KeyObject suitable for verification.
+ * Import an Ed25519 public key from a multibase string into a Node.js
+ * KeyObject. Handles both multicodec-prefixed (34 bytes) and raw (32 bytes)
+ * formats for backwards compatibility.
  */
 export function importPublicKey(keyOrMultibase: string | Buffer): crypto.KeyObject {
-  const raw = typeof keyOrMultibase === 'string'
+  const decoded = typeof keyOrMultibase === 'string'
     ? decodeMultibase(keyOrMultibase)
     : keyOrMultibase;
 
-  if (raw.length !== 32) {
-    throw new Error(`Expected 32-byte Ed25519 public key, got ${raw.length} bytes`);
+  let raw: Buffer;
+  if (decoded.length === 34 && decoded[0] === 0xed && decoded[1] === 0x01) {
+    // Multicodec-prefixed: strip the 2-byte prefix
+    raw = decoded.subarray(2);
+  } else if (decoded.length === 32) {
+    // Raw key (legacy / backwards compat)
+    raw = decoded;
+  } else {
+    throw new Error(
+      `Invalid Ed25519 public key: expected 34 bytes (multicodec-prefixed) or 32 bytes (raw), got ${decoded.length}`,
+    );
   }
 
   return crypto.createPublicKey({
@@ -137,7 +159,7 @@ export function signMessage(
 ): ACPMessage {
   const payload = canonicalPayload(message);
   const sig = crypto.sign(null, payload, privateKey);
-  message.signature = encodeMultibase(sig);
+  message.signature = encodeMultibaseRaw(sig);
   return message;
 }
 
