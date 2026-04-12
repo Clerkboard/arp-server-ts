@@ -89,6 +89,7 @@ export interface AgentIndexEntry {
   name: string;
   url: string;
   summary: string;
+  tags?: string[];
 }
 
 export interface AgentIndex {

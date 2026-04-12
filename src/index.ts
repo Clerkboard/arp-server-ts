@@ -287,6 +287,14 @@ app.get(`/.well-known/acp/${AGENT_NAME}.json`, (_req: Request, res: Response) =>
   res.json(card);
 });
 
+// ---- agents.txt ----------------------------------------------------------
+
+app.get('/agents.txt', (_req: Request, res: Response) => {
+  res.type('text/plain').send(
+    `# ACP agents for this domain\nacp-index: ${BASE_URL}/.well-known/acp/index.json\n`,
+  );
+});
+
 // ---- Agent Index ---------------------------------------------------------
 
 app.get('/.well-known/acp/index.json', (_req: Request, res: Response) => {
@@ -298,6 +306,7 @@ app.get('/.well-known/acp/index.json', (_req: Request, res: Response) => {
         name: AGENT_NAME,
         url: `/.well-known/acp/${AGENT_NAME}.json`,
         summary: 'Echo agent for testing',
+        tags: ['echo', 'testing'],
       },
     ],
     pagination: { hasMore: false, total: 1 },
