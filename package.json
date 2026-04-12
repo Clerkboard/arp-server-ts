@@ -7,7 +7,8 @@
     "start": "tsx src/index.ts",
     "build": "tsc",
     "test": "tsx test/send-message.ts",
-    "test:jcs": "tsx test/jcs-vectors.ts"
+    "test:jcs": "tsx test/jcs-vectors.ts",
+    "postinstall": "npm run build"
   },
   "dependencies": {
     "express": "^4.21.0",

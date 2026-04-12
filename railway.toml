@@ -1,0 +1,12 @@
+[build]
+builder = "nixpacks"
+buildCommand = "npm ci && npm run build"
+
+[deploy]
+startCommand = "node dist/src/index.js"
+healthcheckPath = "/.well-known/acp/index.json"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+[deploy.volumes]
+"/app/data" = "acp-data"
