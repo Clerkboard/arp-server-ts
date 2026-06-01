@@ -1,6 +1,6 @@
 {
   "name": "arp-server-ts",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "description": "ARP reference server — TypeScript",
   "license": "MIT",
   "type": "module",

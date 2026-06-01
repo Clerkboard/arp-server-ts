@@ -12,7 +12,8 @@ export type MessageType =
   | 'negotiate'
   | 'acknowledge'
   | 'error'
-  | 'cancel';
+  | 'cancel'
+  | 'notify'; // v0.7 — Notifications (Section 21)
 
 export interface ARPMessage {
   arp: string;
@@ -21,6 +22,8 @@ export interface ARPMessage {
   from: string;
   to: string;
   capability?: string;
+  event?: string; // v0.7 — present on `notify` messages
+  notificationId?: string; // v0.7 — present on `notify` messages
   correlationId?: string;
   createdAt: string;
   expiresAt?: string;
@@ -36,6 +39,7 @@ export type ARPErrorCode =
   | 'AUTH_FAILED'
   | 'AUTH_DENIED'
   | 'FIRST_CONTACT_REQUIRED'
+  | 'CAPABILITY_DENIED'
   | 'CAPABILITY_UNAVAILABLE'
   | 'CAPABILITY_UNKNOWN'
   | 'SCHEMA_INVALID'
@@ -44,7 +48,13 @@ export type ARPErrorCode =
   | 'MESSAGE_EXPIRED'
   | 'MESSAGE_TOO_LARGE'
   | 'KEY_MISMATCH'
-  | 'INTERNAL_ERROR';
+  | 'INTERNAL_ERROR'
+  // v0.7 — Notifications (Section 21)
+  | 'NOTIFICATION_REJECTED'
+  // v0.7 — Settlements (Section 22)
+  | 'SETTLEMENT_REQUIRED'
+  | 'QUOTE_EXPIRED'
+  | 'QUOTE_INVALID';
 
 export interface ARPErrorBody {
   code: ARPErrorCode;
@@ -61,9 +71,12 @@ export interface Capability {
   description: string;
   schema: Record<string, unknown>;
   responseSchema: Record<string, unknown>;
+  open?: boolean;
 }
 
 export interface AgentCard {
+  '@context'?: Record<string, string>;
+  '@type'?: string;
   arp: string;
   name: string;
   did: string;
@@ -83,6 +96,10 @@ export interface AgentCard {
     window: string;
   };
   contact: string;
+  // v0.7 — Notifications (Section 21.6)
+  notifications?: NotificationsDeclaration;
+  // v0.7 — Settlements (Section 22.3)
+  settlements?: SettlementsDeclaration;
 }
 
 export interface AgentIndexEntry {
@@ -93,6 +110,8 @@ export interface AgentIndexEntry {
 }
 
 export interface AgentIndex {
+  '@context'?: Record<string, string>;
+  '@type'?: string;
   domain: string;
   protocol: string;
   agents: AgentIndexEntry[];
@@ -100,6 +119,87 @@ export interface AgentIndex {
     hasMore: boolean;
     total: number;
   };
+}
+
+// ---------------------------------------------------------------------------
+// Relations (v0.4.0)
+// ---------------------------------------------------------------------------
+
+export type RelationStatus = 'pending' | 'active' | 'dormant' | 'terminated';
+
+export type TrustLevel = 'trusted' | 'known' | 'new' | 'unknown';
+
+export interface Relation {
+  peerDid: string;
+  pinnedKey: string;
+  status: RelationStatus;
+  firstContact: string;
+  lastActivity: string;
+  completions: number;
+  // v0.7 — Notifications (Section 21.3)
+  acceptNotifications?: NotificationPermission;
+}
+
+// ---------------------------------------------------------------------------
+// Notifications (v0.7, Section 21)
+// ---------------------------------------------------------------------------
+
+export interface NotificationsDeclaration {
+  supported: boolean;
+  events?: Record<string, string>;
+  defaultLease?: number;
+  maxLease?: number;
+}
+
+export interface NotificationPermission {
+  events: string[];
+  validUntil: string;
+}
+
+// ---------------------------------------------------------------------------
+// Settlements (v0.7, Section 22)
+// ---------------------------------------------------------------------------
+
+export type SettlementPrimitive = 'prepay' | 'postpay';
+
+export interface SettlementRail {
+  name: string;
+  spec: string;
+  currencies: string[];
+}
+
+export interface SettlementsDeclaration {
+  supported: boolean;
+  rails: SettlementRail[];
+  primitives: SettlementPrimitive[];
+  settlementWindow?: string;
+  quoteCapability?: string;
+}
+
+export interface SettlementQuoteRail {
+  name: string;
+  target: string;
+}
+
+export interface SettlementQuote {
+  amount: string;
+  currency: string;
+  primitive: SettlementPrimitive;
+  validUntil: string;
+  quoteId: string;
+  rails: SettlementQuoteRail[];
+  memo?: string;
+  quoteSig: string;
+}
+
+export interface Settlement {
+  amount: string;
+  currency: string;
+  primitive: SettlementPrimitive;
+  rail: string;
+  quoteId: string;
+  railRef: string;
+  settledAt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,16 +229,11 @@ export interface DIDDocument {
 }
 
 // ---------------------------------------------------------------------------
-// Key pin store
+// Relation store (replaces key pin store in v0.4.0)
 // ---------------------------------------------------------------------------
 
-export interface KeyPin {
-  publicKeyMultibase: string;
-  firstContact: string;
-}
-
-export interface KeyPinStore {
-  [did: string]: KeyPin;
+export interface RelationStore {
+  [did: string]: Relation;
 }
 
 // ---------------------------------------------------------------------------

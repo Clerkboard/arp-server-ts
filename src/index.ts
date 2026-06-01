@@ -1,8 +1,8 @@
 /**
  * ARP Reference Server -- TypeScript / Express
  *
- * Implements a single "echo" agent that speaks the Agent Communication
- * Protocol.  Routes:
+ * Implements a single "echo" agent that speaks the Agent Relations
+ * Protocol (v0.4.0).  Routes:
  *
  *   GET  /{name}/did.json              -- DID document
  *   GET  /.well-known/arp/{name}.json  -- Agent Card
@@ -21,7 +21,7 @@ import {
   encodeMultibase,
   decodeMultibase,
 } from './crypto.js';
-import { PinStore, IdempotencyStore } from './store.js';
+import { RelationStore, IdempotencyStore } from './store.js';
 import { log } from './logger.js';
 import type {
   ARPMessage,
@@ -54,8 +54,11 @@ const MAX_MESSAGE_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 // ---------------------------------------------------------------------------
 
 const { privateKey, publicKeyMultibase } = loadOrCreateKeys(DATA_DIR);
-const pinStore = new PinStore(DATA_DIR);
+const relationStore = new RelationStore(DATA_DIR);
 const idempotencyStore = new IdempotencyStore();
+
+// Open capabilities — these accept requests without first-contact handshake
+const OPEN_CAPABILITIES = new Set(['echo']);
 
 // ---------------------------------------------------------------------------
 // contentRef validation (ARP v0.3)
@@ -258,6 +261,11 @@ app.get(`/${AGENT_NAME}/did.json`, (_req: Request, res: Response) => {
 
 app.get(`/.well-known/arp/${AGENT_NAME}.json`, (_req: Request, res: Response) => {
   const card: AgentCard = {
+    '@context': {
+      '@vocab': 'https://schema.org/',
+      arp: 'https://agentrelationsprotocol.com/ns/',
+    },
+    '@type': 'SoftwareApplication',
     arp: '1.0',
     name: AGENT_NAME,
     did: AGENT_DID,
@@ -272,6 +280,14 @@ app.get(`/.well-known/arp/${AGENT_NAME}.json`, (_req: Request, res: Response) =>
           'Echoes back the message body. Useful for testing signing, verification, and message flow.',
         schema: { type: 'object' },
         responseSchema: { type: 'object' },
+        open: true,
+      },
+      {
+        name: 'private-echo',
+        description:
+          'Same as echo but requires a relation. For testing first-contact enforcement.',
+        schema: { type: 'object' },
+        responseSchema: { type: 'object' },
       },
     ],
     auth: {
@@ -283,15 +299,53 @@ app.get(`/.well-known/arp/${AGENT_NAME}.json`, (_req: Request, res: Response) =>
     },
     rateLimit: { requests: 100, window: '60s' },
     contact: `admin@${DOMAIN}`,
+    // v0.7 — Notifications (Section 21.6)
+    notifications: {
+      supported: true,
+      events: {
+        'order.shipped': 'Fires when a demo order is "shipped"',
+        'order.delivered': 'Fires when a demo order is "delivered"',
+      },
+      defaultLease: 604800,  // 7 days
+      maxLease: 7776000,     // 90 days
+    },
+    // v0.7 — Settlements (Section 22.3)
+    settlements: {
+      supported: true,
+      rails: [
+        {
+          name: 'x402-base-usdc',
+          spec: 'https://x402.org/spec/1.0',
+          currencies: ['USDC'],
+        },
+      ],
+      primitives: ['prepay', 'postpay'],
+      settlementWindow: 'PT24H',
+      quoteCapability: 'arp:settlement.quote',
+    },
   };
   res.json(card);
+});
+
+// Log all incoming requests for debugging
+app.use((req: Request, _res: Response, next) => {
+  console.log(JSON.stringify({ ts: new Date().toISOString(), level: 'debug', method: req.method, path: req.path }));
+  next();
 });
 
 // ---- agents.txt ----------------------------------------------------------
 
 app.get('/agents.txt', (_req: Request, res: Response) => {
+  const openCaps = [...OPEN_CAPABILITIES].join(', ');
   res.type('text/plain').send(
-    `# ARP agents for this domain\narp-version: 1.0\narp-index: ${BASE_URL}/.well-known/arp/index.json\narp-docs: https://github.com/clerkboard/arp/blob/main/spec/arp-rfc.md#appendix-e-implementers-quick-reference\n`,
+    [
+      '# ARP agents for this domain',
+      `arp-directory: ${BASE_URL}/.well-known/arp/index.json`,
+      'arp-version: 1.0',
+      `open-capabilities: ${openCaps}`,
+      'crawl-delay: 10',
+      '',
+    ].join('\n'),
   );
 });
 
@@ -299,6 +353,11 @@ app.get('/agents.txt', (_req: Request, res: Response) => {
 
 app.get('/.well-known/arp/index.json', (_req: Request, res: Response) => {
   const index: AgentIndex = {
+    '@context': {
+      '@vocab': 'https://schema.org/',
+      arp: 'https://agentrelationsprotocol.com/ns/',
+    },
+    '@type': 'CollectionPage',
     domain: DOMAIN,
     protocol: 'arp/1.0',
     agents: [
@@ -375,18 +434,45 @@ app.post(`/${AGENT_NAME}/inbox`, async (req: Request, res: Response) => {
     // verification succeeds, otherwise an attacker can poison the
     // idempotency store with forged messages to block legitimate ones.
 
-    // 5. Resolve sender's public key
+    // 5. Resolve sender's public key & check relation state
     let senderKeyMultibase: string | undefined;
+    const existingRelation = relationStore.getRelation(msg.from);
+    const hasActiveRelation = relationStore.hasActiveRelation(msg.from);
+    const isOpenCapability = msg.type === 'request' && OPEN_CAPABILITIES.has(msg.capability ?? '');
 
-    if (pinStore.hasPin(msg.from)) {
-      // Known sender -- use pinned key
-      const pin = pinStore.getPin(msg.from)!;
-      senderKeyMultibase = pin.publicKeyMultibase;
+    if (existingRelation && existingRelation.status !== 'terminated') {
+      // Known sender — use pinned key from relation
+      senderKeyMultibase = existingRelation.pinnedKey;
     } else if (msg.type === 'negotiate' && typeof (msg.body as Record<string, unknown>).publicKey === 'string') {
-      // First contact -- accept key from negotiate body
+      // First contact — accept key from negotiate body
       senderKeyMultibase = (msg.body as Record<string, unknown>).publicKey as string;
+    } else if (isOpenCapability && !hasActiveRelation) {
+      // Open capability from unknown sender — must resolve key from DID
+      // For now, require publicKey in body for open requests too (pragmatic)
+      if (typeof (msg.body as Record<string, unknown>).publicKey === 'string') {
+        senderKeyMultibase = (msg.body as Record<string, unknown>).publicKey as string;
+      } else {
+        res.status(400).json(
+          errorResponse(msg.from, msg.id, 'AUTH_FAILED',
+            'Open capability requests from unknown senders must include publicKey in body', false),
+        );
+        return;
+      }
+    } else if (existingRelation?.status === 'terminated') {
+      // Terminated relation — reject all messages
+      res.status(403).json(
+        errorResponse(msg.from, msg.id, 'AUTH_DENIED',
+          'Relation has been terminated', false),
+      );
+      return;
+    } else if (msg.type === 'request' && !isOpenCapability) {
+      // Non-open capability, no relation — require first contact
+      res.status(403).json(
+        errorResponse(msg.from, msg.id, 'FIRST_CONTACT_REQUIRED',
+          'Send a negotiate message with firstContact: true before making requests', true),
+      );
+      return;
     } else if (msg.type !== 'negotiate') {
-      // Not pinned and not a negotiate -- reject
       res.status(403).json(
         errorResponse(msg.from, msg.id, 'FIRST_CONTACT_REQUIRED',
           'Send a negotiate message with firstContact: true before making requests', true),
@@ -422,21 +508,22 @@ app.post(`/${AGENT_NAME}/inbox`, async (req: Request, res: Response) => {
       return;
     }
 
-    // 7. Key pinning -- TOFU
-    if (pinStore.hasPin(msg.from)) {
-      const pin = pinStore.getPin(msg.from)!;
-      if (pin.publicKeyMultibase !== senderKeyMultibase) {
+    // 7. Relation management — TOFU + lifecycle
+    if (existingRelation && existingRelation.status !== 'terminated') {
+      if (existingRelation.pinnedKey !== senderKeyMultibase) {
         res.status(403).json(
           errorResponse(msg.from, msg.id, 'KEY_MISMATCH',
             'Sender public key does not match pinned key', false),
         );
         return;
       }
-    } else {
-      // First contact -- pin the key
-      pinStore.setPin(msg.from, senderKeyMultibase);
-      log.info('Pinned new sender key', { did: msg.from });
+      // Touch the relation (reactivates dormant)
+      relationStore.touchRelation(msg.from);
+    } else if (msg.type === 'negotiate') {
+      // First contact — create relation
+      relationStore.createRelation(msg.from, senderKeyMultibase);
     }
+    // Open capability from unknown sender: no relation created (spec: step 4)
 
     // 7b. Record message ID now that signature is verified
     idempotencyStore.addMessage(msg.id);
@@ -453,22 +540,60 @@ app.post(`/${AGENT_NAME}/inbox`, async (req: Request, res: Response) => {
     // 8. Process message type
     log.info('Processing message', { id: msg.id, type: msg.type, from: msg.from });
 
+    // v0.7 -- Notifications (Section 21): fire-and-forget, 202 Accepted, no body
+    if (msg.type === 'notify') {
+      const event = msg.event ?? '';
+      const notificationId = msg.notificationId ?? '';
+      if (!event || !notificationId) {
+        res.status(400).json(
+          errorResponse(msg.from, msg.id, 'SCHEMA_INVALID',
+            'notify messages MUST include event and notificationId', false),
+        );
+        return;
+      }
+      log.info('Notification received', {
+        from: msg.from,
+        event,
+        notificationId,
+        correlationId: msg.correlationId,
+      });
+      // Reference server logs and acks; real applications dispatch to handlers.
+      res.status(202).end();
+      return;
+    }
+
     let response: ARPMessage;
 
     switch (msg.type) {
       case 'negotiate': {
-        response = buildResponse(msg.from, msg.id, 'acknowledge', {
-          accepted: true,
-          message: 'First contact acknowledged. Key pinned.',
-        });
+        // Check for termination request (v0.4.0 Section 11.3)
+        if ((msg.body as Record<string, unknown>).terminate === true) {
+          relationStore.terminateRelation(msg.from);
+          response = buildResponse(msg.from, msg.id, 'acknowledge', {
+            terminated: true,
+            message: 'Relation terminated.',
+          });
+        } else {
+          const trustLevel = relationStore.getTrustLevel(msg.from);
+          response = buildResponse(msg.from, msg.id, 'acknowledge', {
+            firstContact: true,
+            approvedCapabilities: ['echo'],
+            approvedUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            trustLevel,
+            message: 'First contact acknowledged. Relation created.',
+          });
+        }
         break;
       }
 
       case 'request': {
-        if (msg.capability === 'echo') {
+        const trustLevel = relationStore.getTrustLevel(msg.from);
+        if (msg.capability === 'echo' || msg.capability === 'private-echo') {
           response = buildResponse(msg.from, msg.id, 'response', {
             echo: msg.body,
             receivedAt: nowISO(),
+            trustLevel,
+            openRequest: isOpenCapability && !hasActiveRelation,
           });
         } else {
           response = errorResponse(msg.from, msg.id, 'CAPABILITY_UNKNOWN',
