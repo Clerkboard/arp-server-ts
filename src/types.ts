@@ -182,6 +182,10 @@ export interface SettlementQuoteRail {
 }
 
 export interface SettlementQuote {
+  seller: string; // v0.7.1 — DID of the quote issuer
+  buyer: string; // v0.7.1 — DID of the only agent that may settle
+  taskRef: string; // v0.7.1 — correlationId of the task being priced
+  keyRef: string; // v0.7.1 — verification method ID of the signing key
   amount: string;
   currency: string;
   primitive: SettlementPrimitive;
